@@ -1,0 +1,110 @@
+{
+    # Email for Let's Encrypt notifications
+    email {$ADMIN_EMAIL}
+    
+    # Enable HTTP/3
+    servers {
+        protocol {
+            experimental_http3
+        }
+    }
+}
+
+# Main domain configuration for monitoring dashboard (Kibana)
+monitoring.slayhop.com {
+    # Log requests
+    log {
+        output file /var/log/caddy/monitoring-access.log
+        format json
+    }
+    
+    # Handle root path (Kibana)
+    handle / {
+        reverse_proxy kibana:5601
+    }
+    
+    # Compress responses
+    encode gzip
+    
+    # Security headers
+    header {
+        # Enable HSTS
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Prevent MIME sniffing
+        X-Content-Type-Options "nosniff"
+        # Frame options
+        X-Frame-Options "SAMEORIGIN"
+        # XSS protection
+        X-XSS-Protection "1; mode=block"
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Permissions policy
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    }
+}
+
+# Subdomain for Flower task monitoring
+flower.slayhop.com {
+    # Log requests
+    log {
+        output file /var/log/caddy/flower-access.log
+        format json
+    }
+    
+    # Basic auth protection (optional but recommended)
+    basicauth /* {
+        {$FLOWER_USER} {$FLOWER_PASSWORD_HASH}
+    }
+    
+    # Handle all requests to Flower
+    handle /* {
+        reverse_proxy flower:5555
+    }
+    
+    # Compress responses
+    encode gzip
+    
+    # Security headers
+    header {
+        # Enable HSTS
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Prevent MIME sniffing
+        X-Content-Type-Options "nosniff"
+        # Frame options
+        X-Frame-Options "SAMEORIGIN"
+        # XSS protection
+        X-XSS-Protection "1; mode=block"
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}
+
+# Subdomain for Elasticsearch (with authentication)
+elasticsearch.slayhop.com {
+    # Log requests
+    log {
+        output file /var/log/caddy/elasticsearch-access.log
+        format json
+    }
+    
+    # Basic auth protection
+    basicauth /* {
+        {$ELASTIC_USERNAME} {$ELASTIC_PASSWORD_HASH}
+    }
+    
+    # Handle all requests to Elasticsearch
+    handle /* {
+        reverse_proxy elasticsearch:9200
+    }
+    
+    # Compress responses
+    encode gzip
+    
+    # Security headers
+    header {
+        # Enable HSTS
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Prevent MIME sniffing
+        X-Content-Type-Options "nosniff"
+    }
+}

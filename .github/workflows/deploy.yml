@@ -1,0 +1,96 @@
+name: Deploy Monitoring Service
+
+on:
+  push:
+    branches:
+      - prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to monitoring server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.MONITORING_SERVER_HOST }}
+          username: ${{ secrets.MONITORING_SERVER_USERNAME }}
+          key: ${{ secrets.MONITORING_SERVER_SSH_KEY }}
+          script_stop: true # Stop script execution on error
+          script: |
+            # Create deployment directory
+            mkdir -p /opt/monitoring-stack
+            cd /opt/monitoring-stack
+
+            # Create backup of existing configuration
+            if [ -f docker-compose.yml ]; then
+              mkdir -p backups
+              cp docker-compose.yml backups/docker-compose-$(date +%Y%m%d%H%M%S).yml
+            fi
+
+            # Create directories
+            mkdir -p caddy logstash/config logstash/pipeline logs
+
+            # Create or update .env file
+            cat > .env << EOL
+            # RabbitMQ settings
+            RABBITMQ_URL=${{ secrets.RABBITMQ_URL }}
+            RABBITMQ_MANAGEMENT_URL=${{ secrets.RABBITMQ_MANAGEMENT_URL }}
+
+            # Authentication settings
+            FLOWER_USER=${{ secrets.FLOWER_USER }}
+            FLOWER_PASSWORD=${{ secrets.FLOWER_PASSWORD }}
+
+            # Elasticsearch settings
+            ELASTIC_VERSION=7.17.7
+            ELASTIC_USERNAME=elastic
+            ELASTIC_PASSWORD=${{ secrets.ELASTIC_PASSWORD }}
+            ELASTIC_PASSWORD_HASH=${{ secrets.ELASTIC_PASSWORD_HASH }}
+
+            # Domain settings
+            ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
+            EOL
+
+            # Copy configuration files from repository
+            echo "${{ github.workspace }}/docker-compose.yml" > docker-compose.yml
+            echo "${{ github.workspace }}/caddy/Caddyfile" > caddy/Caddyfile
+            echo "${{ github.workspace }}/logstash/config/logstash.yml" > logstash/config/logstash.yml
+            echo "${{ github.workspace }}/logstash/pipeline/logstash.conf" > logstash/pipeline/logstash.conf
+
+            # Apply system configuration for Elasticsearch
+            sudo sysctl -w vm.max_map_count=262144
+
+            # Deploy the stack
+            docker-compose pull
+            docker-compose up -d
+
+            # Cleanup
+            docker system prune -af --volumes
+
+            echo "Deployment completed at $(date)"
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.MONITORING_SERVER_HOST }}
+          username: ${{ secrets.MONITORING_SERVER_USERNAME }}
+          key: ${{ secrets.MONITORING_SERVER_SSH_KEY }}
+          script: |
+            cd /opt/monitoring-stack
+
+            echo "Checking container status..."
+            docker-compose ps
+
+            echo "Checking Elasticsearch..."
+            curl -s http://localhost:9200/_cluster/health | grep -q '"status":"green\|yellow"' && \
+              echo "✅ Elasticsearch is healthy" || echo "❌ Elasticsearch is not healthy"
+
+            echo "Checking Kibana..."
+            curl -s http://localhost:5601/api/status | grep -q '"overall":{"level":"available"' && \
+              echo "✅ Kibana is healthy" || echo "❌ Kibana is not healthy"
+
+            echo "Checking Flower..."
+            curl -s -u ${{ secrets.FLOWER_USER }}:${{ secrets.FLOWER_PASSWORD }} http://localhost:5555/flower/ | \
+              grep -q "Flower" && echo "✅ Flower is healthy" || echo "❌ Flower is not healthy"
