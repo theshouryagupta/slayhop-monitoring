@@ -12,6 +12,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: List repository files
+        run: |
+          echo "Repository contents:"
+          ls -la
+          echo "-----"
+
+          # If you have subdirectories, check those too
+          if [ -d "monitoring" ]; then
+            echo "Monitoring directory contents:"
+            ls -la monitoring/
+          fi
+
       - name: Deploy to monitoring server
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -53,15 +65,31 @@ jobs:
             ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
             EOL
 
-            # Copy configuration files from repository
-            cp ${{ github.workspace }}/docker-compose.yml ./docker-compose.yml
-            cp ${{ github.workspace }}/caddy/Caddyfile ./caddy/Caddyfile
-            cp ${{ github.workspace }}/logstash/config/logstash.yml ./logstash/config/logstash.yml
-            cp ${{ github.workspace }}/logstash/pipeline/logstash.conf ./logstash/pipeline/logstash.conf
+            # Copy files directly from original to destination
+            # Note: We're using scp-action in the next step instead
+            echo "Files will be transferred in the next step"
 
             # Apply system configuration for Elasticsearch
             sudo sysctl -w vm.max_map_count=262144
 
+      - name: Transfer configuration files
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.MONITORING_SERVER_HOST }}
+          username: ${{ secrets.MONITORING_SERVER_USERNAME }}
+          key: ${{ secrets.MONITORING_SERVER_SSH_KEY }}
+          source: 'docker-compose.yml,caddy/Caddyfile,logstash/config/logstash.yml,logstash/pipeline/logstash.conf'
+          target: '/opt/monitoring-stack'
+          strip_components: 0
+
+      - name: Start services
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.MONITORING_SERVER_HOST }}
+          username: ${{ secrets.MONITORING_SERVER_USERNAME }}
+          key: ${{ secrets.MONITORING_SERVER_SSH_KEY }}
+          script: |
+            cd /opt/monitoring-stack
             # Deploy the stack
             docker-compose pull
             docker-compose up -d
