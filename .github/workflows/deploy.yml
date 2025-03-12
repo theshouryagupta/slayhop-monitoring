@@ -54,10 +54,10 @@ jobs:
             EOL
 
             # Copy configuration files from repository
-            echo "${{ github.workspace }}/docker-compose.yml" > docker-compose.yml
-            echo "${{ github.workspace }}/caddy/Caddyfile" > caddy/Caddyfile
-            echo "${{ github.workspace }}/logstash/config/logstash.yml" > logstash/config/logstash.yml
-            echo "${{ github.workspace }}/logstash/pipeline/logstash.conf" > logstash/pipeline/logstash.conf
+            cp ${{ github.workspace }}/docker-compose.yml ./docker-compose.yml
+            cp ${{ github.workspace }}/caddy/Caddyfile ./caddy/Caddyfile
+            cp ${{ github.workspace }}/logstash/config/logstash.yml ./logstash/config/logstash.yml
+            cp ${{ github.workspace }}/logstash/pipeline/logstash.conf ./logstash/pipeline/logstash.conf
 
             # Apply system configuration for Elasticsearch
             sudo sysctl -w vm.max_map_count=262144
