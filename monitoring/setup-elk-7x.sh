@@ -30,7 +30,7 @@ docker network rm monitoring_elk-network 2>/dev/null || true
 echo "Creating directory structure..."
 mkdir -p logstash/pipeline
 
-# Create logstash pipeline
+# Create logstash pipeline files
 echo "Creating logstash pipeline configuration..."
 cat > logstash/pipeline/01-beats-input.conf << EOL
 input {
@@ -38,7 +38,9 @@ input {
     port => 5044
   }
 }
+EOL
 
+cat > logstash/pipeline/02-filter.conf << EOL
 filter {
   if "celery-service-1" in [tags] {
     mutate {
@@ -83,7 +85,9 @@ filter {
     remove_field => [ "timestamp" ]
   }
 }
+EOL
 
+cat > logstash/pipeline/03-output.conf << EOL
 output {
   elasticsearch {
     hosts => ["elasticsearch:9200"]
@@ -94,10 +98,29 @@ output {
 }
 EOL
 
-# Ensure proper permissions for logstash files
-echo "Setting proper permissions for Logstash configuration..."
-chmod -R 755 logstash
-find logstash -type f -exec chmod 644 {} \;
+# Create logstash entrypoint script
+echo "Creating logstash entrypoint script..."
+cat > logstash-entrypoint.sh << 'EOL'
+#!/bin/bash
+set -e
+
+# Copy pipeline configs from read-only mount to writable location
+echo "Copying pipeline configurations..."
+mkdir -p /usr/share/logstash/pipeline/
+cp -r /config-ro/* /usr/share/logstash/pipeline/
+chown -R logstash:logstash /usr/share/logstash/pipeline/
+
+# Set proper permissions
+chmod -R 755 /usr/share/logstash/pipeline/
+find /usr/share/logstash/pipeline -type f -exec chmod 644 {} \;
+
+# Start Logstash with the correct user
+echo "Starting Logstash..."
+exec su-exec logstash "$@"
+EOL
+
+# Set proper permissions
+chmod +x logstash-entrypoint.sh
 
 # Start Elasticsearch
 echo "Starting Elasticsearch..."
@@ -120,12 +143,7 @@ echo "Kibana should be available at: http://your-server-ip:5601"
 echo "Default credentials: elastic / [password from .env file]"
 echo ""
 echo "NOTE: Kibana should be ready within 1-2 minutes."
-echo "You can check status with: docker logs -f kibana"
-
-# Check Logstash status after a brief delay
-echo "Waiting 30 seconds before checking Logstash status..."
-sleep 30
-echo "Logstash container status:"
-docker ps | grep logstash
-echo "Logstash logs (last 10 lines):"
-docker logs logstash --tail 10
+echo "You can check logs with:"
+echo "docker logs -f elasticsearch"
+echo "docker logs -f kibana"
+echo "docker logs -f logstash"

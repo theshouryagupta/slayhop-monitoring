@@ -44,14 +44,15 @@ services:
   logstash:
     image: docker.elastic.co/logstash/logstash:7.17.13
     container_name: logstash
-    user: root # Run as root to avoid permission issues
+    user: root # Run as root to handle file permissions
     environment:
       - xpack.monitoring.elasticsearch.hosts=http://elasticsearch:9200
       - xpack.monitoring.elasticsearch.username=elastic
       - xpack.monitoring.elasticsearch.password=${ELASTIC_PASSWORD}
       - path.config=/usr/share/logstash/pipeline
     volumes:
-      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logstash/pipeline:/config-ro:ro
+      - ./logstash-entrypoint.sh:/logstash-entrypoint.sh:ro
     ports:
       - '5044:5044'
     networks:
@@ -59,7 +60,9 @@ services:
     depends_on:
       - elasticsearch
     restart: always
-    command: bash -c "chown -R logstash:logstash /usr/share/logstash/config /usr/share/logstash/pipeline && su-exec logstash /usr/local/bin/docker-entrypoint"
+    entrypoint: ['/bin/bash', '/logstash-entrypoint.sh']
+    # Original entrypoint args
+    command: ['/usr/local/bin/docker-entrypoint']
 
 networks:
   elk-network:
