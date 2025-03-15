@@ -24,7 +24,7 @@ mkdir -p logstash/pipeline
 # Ensure the directory is writable by everyone (for Docker)
 chmod 777 logstash/pipeline
 
-# Create a minimal working pipeline
+# Create a minimal working pipeline with hardcoded password
 echo "Creating minimal logstash pipeline configuration..."
 cat > logstash/pipeline/logstash.conf << EOL
 input {
@@ -37,7 +37,7 @@ output {
   elasticsearch {
     hosts => ["elasticsearch:9200"]
     user => "elastic"
-    password => "\${ELASTIC_PASSWORD}"
+    password => "${ELASTIC_PASSWORD}"
     index => "logstash-%{+YYYY.MM.dd}"
   }
 }

@@ -48,6 +48,8 @@ services:
       - xpack.monitoring.elasticsearch.hosts=http://elasticsearch:9200
       - xpack.monitoring.elasticsearch.username=elastic
       - xpack.monitoring.elasticsearch.password=${ELASTIC_PASSWORD}
+      # Add this line explicitly to make ELASTIC_PASSWORD available in pipelines
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
     volumes:
       - ./logstash/pipeline:/usr/share/logstash/pipeline
     ports:
