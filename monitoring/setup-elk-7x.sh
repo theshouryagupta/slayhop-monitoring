@@ -15,16 +15,7 @@ fi
 
 # Stop and remove all containers
 echo "Stopping and removing all containers..."
-docker compose down -v
-
-# Remove ALL volumes related to ELK
-echo "Removing all ELK-related volumes..."
-docker volume rm $(docker volume ls -q | grep elastic) 2>/dev/null || true
-docker volume rm monitoring_elasticsearch-data 2>/dev/null || true
-
-# Clean up any leftover Docker networks
-echo "Cleaning up Docker networks..."
-docker network rm monitoring_elk-network 2>/dev/null || true
+docker compose down
 
 # Create required directory structure
 echo "Creating directory structure..."
@@ -33,76 +24,27 @@ mkdir -p logstash/pipeline
 # Ensure the directory is writable by everyone (for Docker)
 chmod 777 logstash/pipeline
 
-# Create logstash pipeline files
-echo "Creating logstash pipeline configuration..."
-cat > logstash/pipeline/01-beats-input.conf << EOL
+# Create a minimal working pipeline
+echo "Creating minimal logstash pipeline configuration..."
+cat > logstash/pipeline/logstash.conf << EOL
 input {
   beats {
     port => 5044
   }
 }
-EOL
 
-cat > logstash/pipeline/02-filter.conf << EOL
-filter {
-  if "celery-service-1" in [tags] {
-    mutate {
-      add_field => { "[@metadata][app]" => "celery-service-1" }
-    }
-    
-    if [message] =~ "ERROR" {
-      mutate {
-        add_tag => ["error"]
-      }
-    }
-  }
-  
-  if "celery-service-2" in [tags] {
-    mutate {
-      add_field => { "[@metadata][app]" => "celery-service-2" }
-    }
-    
-    if [message] =~ "ERROR" {
-      mutate {
-        add_tag => ["error"]
-      }
-    }
-    
-    # Extract task name if available
-    if [message] =~ /\[([^\]]+)\(([^\)]+)\)\]/ {
-      grok {
-        match => { "message" => "\[%{DATA:task_name}\(%{DATA:task_id}\)\]" }
-      }
-    }
-  }
-  
-  if [message] =~ /\[(\w+)\]/ {
-    grok {
-      match => { "message" => "\[%{LOGLEVEL:log_level}\]" }
-    }
-  }
-  
-  date {
-    match => [ "timestamp", "ISO8601" ]
-    target => "@timestamp"
-    remove_field => [ "timestamp" ]
-  }
-}
-EOL
-
-cat > logstash/pipeline/03-output.conf << EOL
 output {
   elasticsearch {
     hosts => ["elasticsearch:9200"]
     user => "elastic"
     password => "\${ELASTIC_PASSWORD}"
-    index => "celery-logs-%{[@metadata][app]}-%{+YYYY.MM.dd}"
+    index => "logstash-%{+YYYY.MM.dd}"
   }
 }
 EOL
 
-# Make sure the pipeline configuration files are readable
-chmod 644 logstash/pipeline/*.conf
+# Make sure the pipeline configuration file is readable
+chmod 644 logstash/pipeline/logstash.conf
 
 # Start Elasticsearch
 echo "Starting Elasticsearch..."
@@ -117,7 +59,7 @@ done
 
 # Start Kibana and Logstash
 echo "Elasticsearch is ready. Starting Kibana and Logstash..."
-docker compose up -d
+docker compose up -d kibana logstash
 
 echo "ELK stack is starting up."
 echo "Elasticsearch should be available at: http://your-server-ip:9200"
