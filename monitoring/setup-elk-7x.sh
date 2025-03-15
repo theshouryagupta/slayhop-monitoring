@@ -28,18 +28,7 @@ docker network rm monitoring_elk-network 2>/dev/null || true
 
 # Create required directory structure
 echo "Creating directory structure..."
-mkdir -p logstash/config
 mkdir -p logstash/pipeline
-
-# Create logstash configuration
-echo "Creating logstash configuration..."
-cat > logstash/config/logstash.yml << EOL
-http.host: "0.0.0.0"
-path.config: /usr/share/logstash/pipeline
-xpack.monitoring.elasticsearch.hosts: ["http://elasticsearch:9200"]
-xpack.monitoring.elasticsearch.username: elastic
-xpack.monitoring.elasticsearch.password: \${ELASTIC_PASSWORD}
-EOL
 
 # Create logstash pipeline
 echo "Creating logstash pipeline configuration..."
@@ -105,6 +94,11 @@ output {
 }
 EOL
 
+# Ensure proper permissions for logstash files
+echo "Setting proper permissions for Logstash configuration..."
+chmod -R 755 logstash
+find logstash -type f -exec chmod 644 {} \;
+
 # Start Elasticsearch
 echo "Starting Elasticsearch..."
 docker compose up -d elasticsearch
@@ -127,3 +121,11 @@ echo "Default credentials: elastic / [password from .env file]"
 echo ""
 echo "NOTE: Kibana should be ready within 1-2 minutes."
 echo "You can check status with: docker logs -f kibana"
+
+# Check Logstash status after a brief delay
+echo "Waiting 30 seconds before checking Logstash status..."
+sleep 30
+echo "Logstash container status:"
+docker ps | grep logstash
+echo "Logstash logs (last 10 lines):"
+docker logs logstash --tail 10
