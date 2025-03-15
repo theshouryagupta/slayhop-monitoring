@@ -1,4 +1,19 @@
 http.host: '0.0.0.0'
+xpack.monitoring.enabled: true
 xpack.monitoring.elasticsearch.hosts: ['http://elasticsearch:9200']
 xpack.monitoring.elasticsearch.username: elastic
 xpack.monitoring.elasticsearch.password: '${ELASTIC_PASSWORD}'
+
+# Add specific Logstash retry policy to fix the error
+action.auto_create_index: true
+pipeline.ordered: auto
+pipeline.batch.size: 125
+pipeline.batch.delay: 50
+queue.type: memory
+queue.max_events: 1000
+
+# Increase retry settings
+output.elasticsearch.retry.initial_backoff: '1s'
+output.elasticsearch.retry.max_backoff: '60s'
+output.elasticsearch.retry.backoff_type: 'exponential'
+output.elasticsearch.retry.max_retries: 5

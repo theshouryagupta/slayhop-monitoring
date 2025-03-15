@@ -13,6 +13,10 @@ services:
       - xpack.security.enabled=true
       - xpack.security.autoconfiguration.enabled=true
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      # Explicitly set allow anonymous access to false
+      - xpack.security.http.ssl.enabled=false
+      # Disable SSL for development (not recommended for production)
+      - xpack.security.transport.ssl.enabled=false
     ulimits:
       memlock:
         soft: -1
@@ -50,6 +54,13 @@ services:
       - XPACK_SECURITY_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
       - XPACK_REPORTING_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
       - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
+      # Server hostname configuration
+      - SERVER_HOST=0.0.0.0
+      - SERVER_NAME=kibana.local
+      # Disable SSL warnings
+      - XPACK_SECURITY_SECURECOOKIES=false
+      # Disable email service warnings
+      - XPACK_NOTIFICATION_DISABLED=true
     ports:
       - '5601:5601'
     networks:
