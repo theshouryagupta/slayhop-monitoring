@@ -30,6 +30,9 @@ docker network rm monitoring_elk-network 2>/dev/null || true
 echo "Creating directory structure..."
 mkdir -p logstash/pipeline
 
+# Ensure the directory is writable by everyone (for Docker)
+chmod 777 logstash/pipeline
+
 # Create logstash pipeline files
 echo "Creating logstash pipeline configuration..."
 cat > logstash/pipeline/01-beats-input.conf << EOL
@@ -98,29 +101,8 @@ output {
 }
 EOL
 
-# Create logstash entrypoint script
-echo "Creating logstash entrypoint script..."
-cat > logstash-entrypoint.sh << 'EOL'
-#!/bin/bash
-set -e
-
-# Copy pipeline configs from read-only mount to writable location
-echo "Copying pipeline configurations..."
-mkdir -p /usr/share/logstash/pipeline/
-cp -r /config-ro/* /usr/share/logstash/pipeline/
-chown -R logstash:logstash /usr/share/logstash/pipeline/
-
-# Set proper permissions
-chmod -R 755 /usr/share/logstash/pipeline/
-find /usr/share/logstash/pipeline -type f -exec chmod 644 {} \;
-
-# Start Logstash with the correct user
-echo "Starting Logstash..."
-exec su-exec logstash "$@"
-EOL
-
-# Set proper permissions
-chmod +x logstash-entrypoint.sh
+# Make sure the pipeline configuration files are readable
+chmod 644 logstash/pipeline/*.conf
 
 # Start Elasticsearch
 echo "Starting Elasticsearch..."
