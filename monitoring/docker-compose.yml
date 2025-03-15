@@ -5,18 +5,15 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
     container_name: elasticsearch
     environment:
-      - node.name=elasticsearch
-      - cluster.name=docker-cluster
       - discovery.type=single-node
+      - xpack.security.enabled=true
+      - xpack.security.enrollment.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
       - bootstrap.memory_lock=true
       - 'ES_JAVA_OPTS=-Xms512m -Xmx512m'
-      - xpack.security.enabled=true
-      - xpack.security.autoconfiguration.enabled=true
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-      # Explicitly set allow anonymous access to false
-      - xpack.security.http.ssl.enabled=false
-      # Disable SSL for development (not recommended for production)
-      - xpack.security.transport.ssl.enabled=false
+      - action.auto_create_index=true
     ulimits:
       memlock:
         soft: -1
@@ -28,20 +25,6 @@ services:
     networks:
       - elk-network
     restart: always
-    healthcheck:
-      test:
-        [
-          'CMD',
-          'curl',
-          '-f',
-          '-u',
-          'elastic:${ELASTIC_PASSWORD}',
-          'http://localhost:9200',
-        ]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.11.1
@@ -50,47 +33,32 @@ services:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
       - ELASTICSEARCH_USERNAME=kibana_system
       - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD}
-      - ELASTICSEARCH_SSL_VERIFICATIONMODE=none
-      - XPACK_SECURITY_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
-      - XPACK_REPORTING_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
-      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
-      # Server hostname configuration
-      - SERVER_HOST=0.0.0.0
-      - SERVER_NAME=kibana.local
-      # Disable SSL warnings
-      - XPACK_SECURITY_SECURECOOKIES=false
-      # Disable email service warnings
-      - XPACK_NOTIFICATION_DISABLED=true
+      - SERVER_HOST="0.0.0.0"
+      - SERVER_PUBLICBASEURL=http://localhost:5601
     ports:
       - '5601:5601'
     networks:
       - elk-network
     depends_on:
-      elasticsearch:
-        condition: service_healthy
+      - elasticsearch
     restart: always
 
   logstash:
     image: docker.elastic.co/logstash/logstash:8.11.1
     container_name: logstash
     volumes:
-      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
-      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logstash/config:/usr/share/logstash/config
+      - ./logstash/pipeline:/usr/share/logstash/pipeline
     ports:
       - '5044:5044'
-      - '5000:5000/tcp'
-      - '5000:5000/udp'
-      - '9600:9600'
     environment:
-      LS_JAVA_OPTS: '-Xmx256m -Xms256m'
-      ELASTIC_USER: elastic
-      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
-      ELASTIC_HOSTS: http://elasticsearch:9200
+      - xpack.monitoring.elasticsearch.hosts=http://elasticsearch:9200
+      - xpack.monitoring.elasticsearch.username=elastic
+      - xpack.monitoring.elasticsearch.password=${ELASTIC_PASSWORD}
     networks:
       - elk-network
     depends_on:
-      elasticsearch:
-        condition: service_healthy
+      - elasticsearch
     restart: always
 
 networks:
