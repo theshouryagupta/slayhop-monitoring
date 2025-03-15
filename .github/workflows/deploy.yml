@@ -1,124 +1,70 @@
-name: Deploy Monitoring Service
+name: Deploy ELK Monitoring Stack
 
 on:
   push:
     branches:
       - prod
+    paths:
+      - 'monitoring/**'
+      - '.github/workflows/deploy.yml'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: List repository files
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add host key
         run: |
-          echo "Repository contents:"
-          ls -la
-          echo "-----"
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.MONITORING_HOST }} >> ~/.ssh/known_hosts
 
-          # If you have subdirectories, check those too
-          if [ -d "monitoring" ]; then
-            echo "Monitoring directory contents:"
-            ls -la monitoring/
-          fi
+      - name: Deploy to server
+        env:
+          SERVER_IP: ${{ secrets.MONITORING_HOST }}
+          DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
+        run: |
+          rsync -avz --exclude '.git' --exclude '.github' ./monitoring/ root@$SERVER_IP:$DEPLOY_PATH
 
-      - name: Deploy to monitoring server
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.MONITORING_SERVER_HOST }}
-          username: ${{ secrets.MONITORING_SERVER_USERNAME }}
-          key: ${{ secrets.MONITORING_SERVER_SSH_KEY }}
-          script_stop: true # Stop script execution on error
-          script: |
-            # Create deployment directory
-            mkdir -p /opt/monitoring-stack
-            cd /opt/monitoring-stack
+      - name: Create .env file
+        env:
+          SERVER_IP: ${{ secrets.MONITORING_HOST }}
+          DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
+          ELASTIC_PASSWORD: ${{ secrets.ELASTIC_PASSWORD }}
+          KIBANA_SYSTEM_PASSWORD: ${{ secrets.KIBANA_SYSTEM_PASSWORD }}
+        run: |
+          cat > .env <<EOL
+          ELASTIC_PASSWORD=$ELASTIC_PASSWORD
+          KIBANA_SYSTEM_PASSWORD=$KIBANA_SYSTEM_PASSWORD
+          EOL
 
-            # Create backup of existing configuration
-            if [ -f docker-compose.yml ]; then
-              mkdir -p backups
-              cp docker-compose.yml backups/docker-compose-$(date +%Y%m%d%H%M%S).yml
-            fi
+          scp .env root@$SERVER_IP:$DEPLOY_PATH/.env
 
-            # Create directories
-            mkdir -p caddy logstash/config logstash/pipeline logs
+      - name: Create required directories
+        env:
+          SERVER_IP: ${{ secrets.MONITORING_HOST }}
+          DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
+        run: |
+          ssh root@$SERVER_IP "mkdir -p $DEPLOY_PATH/logstash/config $DEPLOY_PATH/logstash/pipeline"
 
-            # Create or update .env file
-            cat > .env << EOL
-            # RabbitMQ settings
-            RABBITMQ_URL=${{ secrets.RABBITMQ_URL }}
-            RABBITMQ_MANAGEMENT_URL=${{ secrets.RABBITMQ_MANAGEMENT_URL }}
+      - name: Copy Logstash configuration
+        env:
+          SERVER_IP: ${{ secrets.MONITORING_HOST }}
+          DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
+        run: |
+          scp ./monitoring/logstash/config/logstash.yml root@$SERVER_IP:$DEPLOY_PATH/logstash/config/
+          scp ./monitoring/logstash/pipeline/celery.conf root@$SERVER_IP:$DEPLOY_PATH/logstash/pipeline/
 
-            # Authentication settings
-            FLOWER_USER=${{ secrets.FLOWER_USER }}
-            FLOWER_PASSWORD=${{ secrets.FLOWER_PASSWORD }}
-
-            # Elasticsearch settings
-            ELASTIC_VERSION=7.17.7
-            ELASTIC_USERNAME=elastic
-            ELASTIC_PASSWORD=${{ secrets.ELASTIC_PASSWORD }}
-            ELASTIC_PASSWORD_HASH=${{ secrets.ELASTIC_PASSWORD_HASH }}
-
-            # Domain settings
-            ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
-            EOL
-
-            # Copy files directly from original to destination
-            # Note: We're using scp-action in the next step instead
-            echo "Files will be transferred in the next step"
-
-            # Apply system configuration for Elasticsearch
-            sudo sysctl -w vm.max_map_count=262144
-
-      - name: Transfer configuration files
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.MONITORING_SERVER_HOST }}
-          username: ${{ secrets.MONITORING_SERVER_USERNAME }}
-          key: ${{ secrets.MONITORING_SERVER_SSH_KEY }}
-          source: 'docker-compose.yml,caddy/Caddyfile,logstash/config/logstash.yml,logstash/pipeline/logstash.conf'
-          target: '/opt/monitoring-stack'
-          strip_components: 0
-
-      - name: Start services
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.MONITORING_SERVER_HOST }}
-          username: ${{ secrets.MONITORING_SERVER_USERNAME }}
-          key: ${{ secrets.MONITORING_SERVER_SSH_KEY }}
-          script: |
-            cd /opt/monitoring-stack
-            # Deploy the stack
-            docker-compose pull
-            docker-compose up -d
-
-            # Cleanup
-            docker system prune -af --volumes
-
-            echo "Deployment completed at $(date)"
-
-      - name: Verify deployment
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.MONITORING_SERVER_HOST }}
-          username: ${{ secrets.MONITORING_SERVER_USERNAME }}
-          key: ${{ secrets.MONITORING_SERVER_SSH_KEY }}
-          script: |
-            cd /opt/monitoring-stack
-
-            echo "Checking container status..."
-            docker-compose ps
-
-            echo "Checking Elasticsearch..."
-            curl -s http://localhost:9200/_cluster/health | grep -q '"status":"green\|yellow"' && \
-              echo "✅ Elasticsearch is healthy" || echo "❌ Elasticsearch is not healthy"
-
-            echo "Checking Kibana..."
-            curl -s http://localhost:5601/api/status | grep -q '"overall":{"level":"available"' && \
-              echo "✅ Kibana is healthy" || echo "❌ Kibana is not healthy"
-
-            echo "Checking Flower..."
-            curl -s -u ${{ secrets.FLOWER_USER }}:${{ secrets.FLOWER_PASSWORD }} http://localhost:5555/flower/ | \
-              grep -q "Flower" && echo "✅ Flower is healthy" || echo "❌ Flower is not healthy"
+      - name: Restart Docker containers
+        env:
+          SERVER_IP: ${{ secrets.MONITORING_HOST }}
+          DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
+        run: |
+          ssh root@$SERVER_IP "cd $DEPLOY_PATH && docker compose down && docker compose up -d"
