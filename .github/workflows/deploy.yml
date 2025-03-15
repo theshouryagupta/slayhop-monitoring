@@ -1,4 +1,4 @@
-name: Deploy ELK Monitoring Stack
+name: Deploy ELK Monitoring Stack 7.x
 
 on:
   push:
@@ -26,16 +26,23 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.MONITORING_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to server
+      - name: Deploy files
         env:
           SERVER_IP: ${{ secrets.MONITORING_HOST }}
           DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
         run: |
-          # Create needed directories on the server
-          ssh root@$SERVER_IP "mkdir -p $DEPLOY_PATH/logstash/config $DEPLOY_PATH/logstash/pipeline"
+          # First, ensure the directory exists
+          ssh root@$SERVER_IP "mkdir -p $DEPLOY_PATH"
 
-          # Sync all files to the server
-          rsync -avz --exclude '.git' --exclude '.github' ./monitoring/ root@$SERVER_IP:$DEPLOY_PATH
+          # Copy the docker-compose.yml file
+          scp ./monitoring/docker-compose.yml root@$SERVER_IP:$DEPLOY_PATH/
+
+          # Copy the .env.template file
+          scp ./monitoring/.env.template root@$SERVER_IP:$DEPLOY_PATH/
+
+          # Copy the setup script
+          scp ./monitoring/setup-elk-7x.sh root@$SERVER_IP:$DEPLOY_PATH/
+          ssh root@$SERVER_IP "chmod +x $DEPLOY_PATH/setup-elk-7x.sh"
 
       - name: Create .env file
         env:
@@ -49,45 +56,21 @@ jobs:
 
           scp .env root@$SERVER_IP:$DEPLOY_PATH/.env
 
-      - name: Make initialization script executable
+      - name: Run setup script
         env:
           SERVER_IP: ${{ secrets.MONITORING_HOST }}
           DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
         run: |
-          ssh root@$SERVER_IP "chmod +x $DEPLOY_PATH/initialize-elk.sh"
+          ssh root@$SERVER_IP "cd $DEPLOY_PATH && ./setup-elk-7x.sh"
 
-      - name: Determine if full reset is needed
+      - name: Check service status
         env:
           SERVER_IP: ${{ secrets.MONITORING_HOST }}
-          DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
-        id: reset_check
+          ELASTIC_PASSWORD: ${{ secrets.ELASTIC_PASSWORD }}
         run: |
-          if [[ "$COMMIT_MSG" == *"[reset-elk]"* ]]; then
-            echo "reset_needed=true" >> $GITHUB_OUTPUT
-          else
-            echo "reset_needed=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Initialize or restart ELK stack
-        env:
-          SERVER_IP: ${{ secrets.MONITORING_HOST }}
-          DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
-          RESET_NEEDED: ${{ steps.reset_check.outputs.reset_needed }}
-        run: |
-          if [ "$RESET_NEEDED" = "true" ]; then
-            echo "Performing full reset of ELK stack..."
-            ssh root@$SERVER_IP "cd $DEPLOY_PATH && ./initialize-elk.sh reset"
-          else
-            echo "Restarting ELK stack..."
-            ssh root@$SERVER_IP "cd $DEPLOY_PATH && ./initialize-elk.sh"
-          fi
-
-      - name: Check ELK services status
-        env:
-          SERVER_IP: ${{ secrets.MONITORING_HOST }}
-          DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
-        run: |
-          echo "Checking ELK services status (after 30s to allow startup)..."
-          sleep 30
-          ssh root@$SERVER_IP "docker ps | grep 'elastic\|kibana\|logstash'"
+          echo "Giving services time to start up (60 seconds)..."
+          sleep 60
+          echo "Checking container status:"
+          ssh root@$SERVER_IP "docker ps"
+          echo "Elasticsearch status:"
+          ssh root@$SERVER_IP "curl -s -u elastic:$ELASTIC_PASSWORD http://localhost:9200/_cluster/health | grep status"
