@@ -38,11 +38,11 @@ jobs:
           SERVER_IP: ${{ secrets.MONITORING_HOST }}
           DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
           ELASTIC_PASSWORD: ${{ secrets.ELASTIC_PASSWORD }}
-          KIBANA_SYSTEM_PASSWORD: ${{ secrets.KIBANA_SYSTEM_PASSWORD }}
+          KIBANA_ENCRYPTION_KEY: ${{ secrets.KIBANA_ENCRYPTION_KEY }}
         run: |
           cat > .env <<EOL
           ELASTIC_PASSWORD=$ELASTIC_PASSWORD
-          KIBANA_SYSTEM_PASSWORD=$KIBANA_SYSTEM_PASSWORD
+          KIBANA_ENCRYPTION_KEY=$KIBANA_ENCRYPTION_KEY
           EOL
 
           scp .env root@$SERVER_IP:$DEPLOY_PATH/.env
@@ -62,9 +62,25 @@ jobs:
           scp ./monitoring/logstash/config/logstash.yml root@$SERVER_IP:$DEPLOY_PATH/logstash/config/
           scp ./monitoring/logstash/pipeline/celery.conf root@$SERVER_IP:$DEPLOY_PATH/logstash/pipeline/
 
-      - name: Restart Docker containers
+      - name: Make initialization script executable
         env:
           SERVER_IP: ${{ secrets.MONITORING_HOST }}
           DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
         run: |
-          ssh root@$SERVER_IP "cd $DEPLOY_PATH && docker compose down && docker compose up -d"
+          ssh root@$SERVER_IP "chmod +x $DEPLOY_PATH/initialize-elk.sh"
+
+      - name: Initialize or restart ELK stack
+        env:
+          SERVER_IP: ${{ secrets.MONITORING_HOST }}
+          DEPLOY_PATH: ${{ secrets.MONITORING_DEPLOY_PATH }}
+        run: |
+          # Check if this is a first-time setup or requires reinitialization
+          NEEDS_INIT=$(ssh root@$SERVER_IP "if [ ! -d '/var/lib/docker/volumes/monitoring_elasticsearch-data' ] || [ '${{ github.event.head_commit.message }}' == *'[reinit-elk]'* ]; then echo 'yes'; else echo 'no'; fi")
+
+          if [ "$NEEDS_INIT" = "yes" ]; then
+            echo "Initializing ELK stack..."
+            ssh root@$SERVER_IP "cd $DEPLOY_PATH && ./initialize-elk.sh"
+          else
+            echo "Restarting ELK stack..."
+            ssh root@$SERVER_IP "cd $DEPLOY_PATH && docker compose down && docker compose up -d"
+          fi

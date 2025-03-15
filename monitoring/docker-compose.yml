@@ -5,10 +5,13 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
     container_name: elasticsearch
     environment:
+      - node.name=elasticsearch
+      - cluster.name=docker-cluster
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - 'ES_JAVA_OPTS=-Xms512m -Xmx512m'
       - xpack.security.enabled=true
+      - xpack.security.autoconfiguration.enabled=true
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
     ulimits:
       memlock:
@@ -22,32 +25,39 @@ services:
       - elk-network
     restart: always
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:9200']
-      interval: 30s
+      test:
+        [
+          'CMD',
+          'curl',
+          '-f',
+          '-u',
+          'elastic:${ELASTIC_PASSWORD}',
+          'http://localhost:9200',
+        ]
+      interval: 10s
       timeout: 10s
       retries: 5
+      start_period: 30s
 
-  setup_users:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
-    container_name: setup_users
-    volumes:
-      - ./setup/create_users.sh:/usr/share/elasticsearch/create_users.sh
-    command: >
-      bash -c '
-        echo "Waiting for Elasticsearch to be ready..."
-        until curl -s http://elasticsearch:9200 | grep -q "You Know, for Search"; do
-          sleep 5
-        done
-        echo "Elasticsearch is up. Setting up users..."
-        /usr/share/elasticsearch/create_users.sh
-      '
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.1
+    container_name: kibana
     environment:
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-      - KIBANA_SYSTEM_PASSWORD=${KIBANA_SYSTEM_PASSWORD}
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD}
+      - ELASTICSEARCH_SSL_VERIFICATIONMODE=none
+      - XPACK_SECURITY_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
+      - XPACK_REPORTING_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY}
+    ports:
+      - '5601:5601'
     networks:
       - elk-network
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
+    restart: always
 
   logstash:
     image: docker.elastic.co/logstash/logstash:8.11.1
@@ -68,23 +78,8 @@ services:
     networks:
       - elk-network
     depends_on:
-      - elasticsearch
-    restart: always
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.11.1
-    container_name: kibana
-    ports:
-      - '5601:5601'
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=kibana_system
-      - ELASTICSEARCH_PASSWORD=${KIBANA_SYSTEM_PASSWORD}
-    networks:
-      - elk-network
-    depends_on:
-      - elasticsearch
-      - setup_users
+      elasticsearch:
+        condition: service_healthy
     restart: always
 
 networks:
