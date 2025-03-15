@@ -45,11 +45,7 @@ services:
     image: docker.elastic.co/logstash/logstash:7.17.13
     container_name: logstash
     environment:
-      - xpack.monitoring.elasticsearch.hosts=http://elasticsearch:9200
-      - xpack.monitoring.elasticsearch.username=elastic
-      - xpack.monitoring.elasticsearch.password=${ELASTIC_PASSWORD}
-      # Add this line explicitly to make ELASTIC_PASSWORD available in pipelines
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - xpack.monitoring.enabled=false
     volumes:
       - ./logstash/pipeline:/usr/share/logstash/pipeline
     ports:

@@ -25,7 +25,7 @@ mkdir -p logstash/pipeline
 chmod 777 logstash/pipeline
 
 # Create a minimal working pipeline with hardcoded password
-echo "Creating minimal logstash pipeline configuration..."
+echo "Creating minimal logstash pipeline configuration with hardcoded password..."
 cat > logstash/pipeline/logstash.conf << EOL
 input {
   beats {
@@ -37,11 +37,15 @@ output {
   elasticsearch {
     hosts => ["elasticsearch:9200"]
     user => "elastic"
-    password => "${ELASTIC_PASSWORD}"
+    password => "PLACEHOLDER_PASSWORD"
     index => "logstash-%{+YYYY.MM.dd}"
   }
 }
 EOL
+
+# Replace placeholder with actual password
+echo "Setting actual password in configuration..."
+sed -i "s/PLACEHOLDER_PASSWORD/${ELASTIC_PASSWORD}/g" logstash/pipeline/logstash.conf
 
 # Make sure the pipeline configuration file is readable
 chmod 644 logstash/pipeline/logstash.conf
