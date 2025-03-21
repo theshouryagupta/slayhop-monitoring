@@ -30,6 +30,10 @@ cat > logstash/pipeline/logstash.conf << EOL
 input {
   beats {
     port => 5044
+    host => "0.0.0.0"
+    # Add explicit protocol setting
+    codec => "plain"
+    client_inactivity_timeout => 60
   }
 }
 
