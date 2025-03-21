@@ -61,9 +61,22 @@ until curl -s -u elastic:${ELASTIC_PASSWORD} http://localhost:9200/_cluster/heal
   sleep 10
 done
 
+
 # Start Kibana and Logstash
 echo "Elasticsearch is ready. Starting Kibana and Logstash..."
 docker compose up -d kibana logstash
+
+# Wait for Logstash to start properly
+echo "Waiting for Logstash to start (60 seconds)..."
+sleep 60
+
+# Update Logstash beats input plugin to match Filebeat version
+echo "Updating Logstash beats input plugin to be compatible with Filebeat 7.x..."
+docker exec logstash bin/logstash-plugin update logstash-input-beats
+
+# Restart Logstash to apply the plugin update
+echo "Restarting Logstash to apply plugin update..."
+docker restart logstash
 
 echo "ELK stack is starting up."
 echo "Elasticsearch should be available at: http://your-server-ip:9200"
@@ -75,3 +88,7 @@ echo "You can check logs with:"
 echo "docker logs -f elasticsearch"
 echo "docker logs -f kibana"
 echo "docker logs -f logstash"
+
+# Print current plugins version for verification
+echo "Checking Logstash beats input plugin version..."
+docker exec logstash bin/logstash-plugin list --verbose | grep beats

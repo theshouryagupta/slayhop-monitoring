@@ -74,3 +74,5 @@ jobs:
           ssh root@$SERVER_IP "docker ps"
           echo "Elasticsearch status:"
           ssh root@$SERVER_IP "curl -s -u elastic:$ELASTIC_PASSWORD http://localhost:9200/_cluster/health | grep status"
+          echo "Logstash beats plugin version:"
+          ssh root@$SERVER_IP "docker exec logstash bin/logstash-plugin list --verbose | grep beats"
